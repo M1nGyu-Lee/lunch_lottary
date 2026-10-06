@@ -42,6 +42,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      # electron-builder 26 writes NFD helper names. mac.extendInfo.CFBundleName
+      # uses the same form to preserve the Korean product name (upstream #9962).
       - run: pnpm exec electron-builder --${{ matrix.target }} ${{ matrix.format }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -57,9 +59,29 @@ jobs:
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/lunch-dmg" "$DMG"
           trap 'hdiutil detach "$RUNNER_TEMP/lunch-dmg"' EXIT
           codesign --verify --deep --strict "$RUNNER_TEMP/lunch-dmg/점심복권.app"
+          ditto "$RUNNER_TEMP/lunch-dmg/점심복권.app" "$RUNNER_TEMP/lunch-installed/점심복권.app"
+          hdiutil detach "$RUNNER_TEMP/lunch-dmg"
+          trap - EXIT
+          codesign --verify --deep --strict "$RUNNER_TEMP/lunch-installed/점심복권.app"
+          python3 - <<'PY'
+          import os, plistlib
+          from pathlib import Path
+          contents = Path(os.environ['RUNNER_TEMP']) / 'lunch-installed/점심복권.app/Contents'
+          with (contents / 'Info.plist').open('rb') as file:
+              name = plistlib.load(file)['CFBundleName']
+          helpers = os.listdir(contents / 'Frameworks')
+          for suffix in ['', ' (Renderer)', ' (GPU)', ' (Plugin)']:
+              assert name + ' Helper' + suffix + '.app' in helpers, (name, helpers)
+          print('Mac bundle and helper names match byte for byte')
+          PY
           NODE_PATH="$RUNNER_TEMP/lunch-smoke/node_modules" \
-          SMOKE_EXECUTABLE="$RUNNER_TEMP/lunch-dmg/점심복권.app/Contents/MacOS/점심복권" \
+          SMOKE_EXECUTABLE="$RUNNER_TEMP/lunch-installed/점심복권.app/Contents/MacOS/점심복권" \
           node scripts/desktop-smoke.cjs
+      - name: Mac crash diagnostics
+        if: failure() && matrix.target == 'mac'
+        shell: bash
+        run: |
+          find "$HOME/Library/Logs/DiagnosticReports" -name '*.ips' -mmin -10 -exec cat {} \; || true
       - uses: actions/upload-artifact@v4
         with:
           name: lunch-lottery-${{ matrix.target }}-${{ matrix.arch }}
