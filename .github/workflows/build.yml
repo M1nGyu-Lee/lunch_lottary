@@ -1,0 +1,95 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            arch: x64
+            artifact: dist/*.exe
+          - os: macos-15-intel
+            target: mac
+            arch: x64
+            artifact: dist/*.dmg
+          - os: macos-latest
+            target: mac
+            arch: arm64
+            artifact: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm exec electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify and test the Mac disk image
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lunch-smoke" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          hdiutil verify dist/*.dmg
+          mkdir -p "$RUNNER_TEMP/lunch-dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/lunch-dmg" dist/*.dmg
+          trap 'hdiutil detach "$RUNNER_TEMP/lunch-dmg"' EXIT
+          codesign --verify --deep --strict "$RUNNER_TEMP/lunch-dmg/점심복권.app"
+          NODE_PATH="$RUNNER_TEMP/lunch-smoke/node_modules" \
+          SMOKE_EXECUTABLE="$RUNNER_TEMP/lunch-dmg/점심복권.app/Contents/MacOS/점심복권" \
+          node scripts/desktop-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunch-lottery-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lunch-lottery-*
+          path: release
+          merge-multiple: true
+      - name: Package source and checksums
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "RELEASE_TAG=v$VERSION" >> "$GITHUB_ENV"
+          git archive --format=zip --prefix=lunch-lottery/ --output="release/LunchLottery-source-$VERSION.zip" HEAD
+          cd release
+          sha256sum *.exe *.dmg *.zip > SHA256SUMS.txt
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; build artifacts remain available in Actions."
+          else
+            gh release create "$RELEASE_TAG" release/* --target "$GITHUB_SHA" --title "점심복권 $RELEASE_TAG" --generate-notes
+          fi
