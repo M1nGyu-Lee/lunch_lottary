@@ -22,10 +22,51 @@
     "appId": "kr.team.lunchlottery",
     "productName": "점심복권",
     "asar": true,
-    "electronDownload": { "cache": "work/electron-cache" },
-    "files": ["app/**/*", "electron/**/*", "package.json"],
-    "directories": { "output": "dist" },
-    "win": { "icon": "build/icon.ico", "target": [{ "target": "portable", "arch": ["x64"] }], "artifactName": "LunchLottery-Windows-${version}.${ext}" },
-    "mac": { "icon": "build/icon.png", "identity": "-", "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }], "artifactName": "LunchLottery-macOS-${arch}-${version}.${ext}", "category": "public.app-category.food-and-drink", "extendInfo": { "NSLocalNetworkUsageDescription": "같은 교육장 네트워크에서 점심복권 음식점과 추첨 이력을 공유합니다." } }
+    "electronDownload": {
+      "cache": "work/electron-cache"
+    },
+    "files": [
+      "app/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "LunchLottery-Windows-${version}.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "identity": "-",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "LunchLottery-macOS-${arch}-${version}.${ext}",
+      "category": "public.app-category.food-and-drink",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "같은 교육장 네트워크에서 점심복권 음식점과 추첨 이력을 공유합니다."
+      },
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "backgroundColor": "#F4F1FF"
+    }
   }
 }
