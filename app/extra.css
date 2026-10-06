@@ -1,0 +1,31 @@
+.payment-filter { margin-top: 24px; }
+.payment-label { color: #bcb4c7; font-size: 11px; font-weight: 800; margin-bottom: 9px; }
+.segmented { display: flex; gap: 6px; padding: 4px; background: #111019; border: 1px solid #39313f; border-radius: 11px; }
+.segmented button { flex: 1; border: 0; background: transparent; color: #9891a0; padding: 9px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; }
+.segmented button:hover { color: #f1e7f5; }
+.segmented button.selected { background: #493454; color: #f2d4ff; box-shadow: 0 2px 10px #0003; }
+.ate-current { display: block; margin: 17px auto 0; border: 1px solid #64856c; background: #22382b; color: #b8e2ba; border-radius: 10px; padding: 10px 17px; font-size: 12px; font-weight: 800; }
+.ate-current:hover { background: #2c5039; }
+.new-session { display: block; margin: 10px auto 0; background: transparent; border: 0; color: #948c9d; font-size: 11px; text-decoration: underline; }
+.new-session:hover { color: #e0c2ee; }
+.history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.history-toolbar { display: flex; justify-content: space-between; align-items: center; margin: 28px 0 14px; }
+.history-toolbar > span { font-size: 14px; font-weight: 800; }
+.history-toolbar select { background: #1d1b26; border: 1px solid #39343f; color: #c8c3d0; border-radius: 10px; padding: 10px 12px; font-size: 11px; }
+.history-list { display: grid; gap: 10px; }
+.history-card { display: flex; align-items: center; gap: 15px; border: 1px solid #302e3a; background: #1b1a24; border-radius: 13px; padding: 18px 20px; }
+.history-icon { width: 44px; height: 44px; flex: none; border-radius: 12px; display: grid; place-items: center; background: #3b2d47; color: #d7b2e9; font-size: 20px; }
+.history-details { min-width: 0; flex: 1; }
+.history-details strong { display: block; font-size: 15px; }
+.history-details p { color: #aaa3b1; font-size: 11px; margin: 5px 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phase-badge { display: inline-block; border-radius: 5px; padding: 3px 7px; background: #302b3c; color: #c6aed3; font-size: 10px; }
+.phase-badge.final { background: #432b2d; color: #f5ac9d; }
+.phase-badge.ultimate { background: #25374b; color: #acd7fc; }
+.history-right { display: flex; gap: 10px; align-items: center; }
+.eaten-date { color: #afd7ad; font-size: 11px; white-space: nowrap; }
+.history-action { border: 1px solid #51425b; background: #312837; color: #e0c2ee; border-radius: 8px; padding: 8px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.history-action:hover { background: #513a60; }
+.visit-dialog { width: min(430px, calc(100vw - 30px)); }
+.visit-restaurant-name { font-size: 17px; font-weight: 800; margin: 0 0 18px; }
+.visit-dialog .form-field input { color-scheme: dark; }
+@media(max-width:650px) { .history-card { flex-wrap: wrap; padding: 14px; } .history-right { width: 100%; justify-content: flex-end; } .eaten-date { margin-right: auto; } }
