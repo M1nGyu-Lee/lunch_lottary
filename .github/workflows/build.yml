@@ -17,16 +17,19 @@ jobs:
         include:
           - os: windows-latest
             target: win
+            format: portable
             arch: x64
             artifact: dist/*.exe
           - os: macos-15-intel
             target: mac
+            format: dmg
             arch: x64
-            artifact: dist/*.dmg
+            artifact: dist/LunchLottery-macOS-x64-*.dmg
           - os: macos-latest
             target: mac
+            format: dmg
             arch: arm64
-            artifact: dist/*.dmg
+            artifact: dist/LunchLottery-macOS-arm64-*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +42,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
-      - run: pnpm exec electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+      - run: pnpm exec electron-builder --${{ matrix.target }} ${{ matrix.format }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Verify and test the Mac disk image
@@ -47,9 +50,11 @@ jobs:
         shell: bash
         run: |
           npm install --prefix "$RUNNER_TEMP/lunch-smoke" --ignore-scripts --no-audit --no-fund playwright@1.62.1
-          hdiutil verify dist/*.dmg
+          VERSION=$(node -p "require('./package.json').version")
+          DMG="dist/LunchLottery-macOS-${{ matrix.arch }}-$VERSION.dmg"
+          hdiutil verify "$DMG"
           mkdir -p "$RUNNER_TEMP/lunch-dmg"
-          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/lunch-dmg" dist/*.dmg
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/lunch-dmg" "$DMG"
           trap 'hdiutil detach "$RUNNER_TEMP/lunch-dmg"' EXIT
           codesign --verify --deep --strict "$RUNNER_TEMP/lunch-dmg/점심복권.app"
           NODE_PATH="$RUNNER_TEMP/lunch-smoke/node_modules" \
