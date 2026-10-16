@@ -65,6 +65,11 @@
 .photo-dialog > button { position: absolute; right: 8px; top: 5px; }
 .photo-dialog img { width: 100%; max-height: 75vh; object-fit: contain; display: block; }
 .review-form-dialog .dialog-footer { position: sticky; bottom: 0; background: #1b1723; }
+:root { color-scheme: dark; }
+.reviews-dialog[open],.review-form-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.review-form-dialog > form { display: flex; flex-direction: column; min-height: 0; max-height: inherit; }
+.reviews-dialog .dialog-header,.review-form-dialog .dialog-header,.review-form-dialog .dialog-footer { flex: none; }
+.reviews-dialog .dialog-body,.review-form-dialog .dialog-body { min-height: 0; max-height: none; flex: 1 1 auto; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #65546f #201d28; }
 .avatar-picker { margin: 0 0 22px; padding: 16px; border: 1px solid #44324f; border-radius: 14px; background: #241b30; }
 .avatar-picker-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
 .avatar-picker-heading > span { font-size: 12px; font-weight: 800; color: #ead6f5; }
