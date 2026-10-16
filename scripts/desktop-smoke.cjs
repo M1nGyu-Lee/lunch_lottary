@@ -8,11 +8,18 @@ const assert = require('node:assert/strict');
 const executablePath = process.env.SMOKE_EXECUTABLE;
 if (!executablePath) throw new Error('Set SMOKE_EXECUTABLE to the packaged Electron executable.');
 const suffix = `${process.pid}-${Date.now()}`;
+const smokePort = 50000 + process.pid % 1000;
 const hostProfile = path.join(os.tmpdir(), `lunch-smoke-host-${suffix}`);
 const clientProfile = path.join(os.tmpdir(), `lunch-smoke-client-${suffix}`);
 
 async function launch(profile) {
-  return electron.launch({ executablePath, args: [`--user-data-dir=${profile}`], timeout: 30000 });
+  return electron.launch({ executablePath, args: [`--user-data-dir=${profile}`, `--lunch-smoke-port=${smokePort}`], timeout: 30000 });
+}
+
+async function capture(page, name) {
+  if (!process.env.SMOKE_SCREENSHOT_DIR) return;
+  await fs.mkdir(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(process.env.SMOKE_SCREENSHOT_DIR, name + '.png') });
 }
 
 async function addRestaurant(page, name) {
@@ -56,6 +63,42 @@ async function addRestaurant(page, name) {
     await clientPage.waitForFunction(() => document.querySelector('#sideCount')?.textContent === '17');
     await hostPage.waitForFunction(() => document.querySelector('#sideCount')?.textContent === '17', null, { timeout: 10000 });
 
+    await clientPage.getByRole('button', { name: '참여 PC가 추가한 식당 별점·리뷰', exact: true }).click();
+    await clientPage.locator('#addReviewButton').click();
+    await clientPage.locator('#reviewNickname').fill('도트 점심친구');
+    await clientPage.getByRole('button', { name: '픽셀 게임', exact: true }).click();
+    await clientPage.getByRole('button', { name: '도시락 유령', exact: true }).click();
+    await clientPage.waitForFunction(() => [...document.querySelectorAll('#reviewAvatarChoices img')].every(image => image.complete && image.naturalWidth > 0));
+    await capture(clientPage, 'avatar-picker');
+    await clientPage.getByRole('button', { name: '별점 4점', exact: true }).click();
+    await clientPage.locator('#reviewBody').fill('팀원과 점심 먹기 좋아요. <script>문자는 그대로</script>');
+    const photo = await clientPage.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 100;
+      const context = canvas.getContext('2d'); context.fillStyle = '#a2cfb0'; context.fillRect(0, 0, 160, 100);
+      return canvas.toDataURL('image/png').split(',')[1];
+    });
+    await clientPage.locator('#reviewPhotoInput').setInputFiles({ name: 'lunch.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
+    await clientPage.waitForFunction(() => document.querySelectorAll('#reviewPhotoPreviews img').length === 1);
+    await clientPage.locator('#reviewPin').fill('0427');
+    await clientPage.locator('#reviewSaveButton').click();
+    await clientPage.waitForFunction(() => document.querySelectorAll('#reviewsList .review-card').length === 1);
+    await hostPage.getByRole('button', { name: '참여 PC가 추가한 식당 별점·리뷰', exact: true }).click();
+    await hostPage.waitForFunction(() => document.querySelectorAll('#reviewsList .review-card').length === 1);
+    await hostPage.waitForFunction(() => [...document.querySelectorAll('#reviewsList img')].every(image => image.complete && image.naturalWidth > 0));
+    assert.ok((await hostPage.locator('#reviewsSummary').textContent()).includes('4.0'));
+    assert.equal(await hostPage.locator('#reviewsList .review-avatar').getAttribute('alt'), '도시락 유령');
+    await capture(hostPage, 'shared-review');
+    await clientPage.locator('#reviewsList .review-edit').click();
+    await clientPage.getByRole('button', { name: '별점 5점', exact: true }).click();
+    await clientPage.locator('#reviewPin').fill('1111'); await clientPage.locator('#reviewSaveButton').click();
+    await clientPage.waitForFunction(() => document.querySelector('#reviewFormError')?.textContent.includes('맞지'));
+    await clientPage.getByRole('button', { name: '하찮은 낙서', exact: true }).click();
+    await clientPage.getByRole('button', { name: '멍한 개구리', exact: true }).click();
+    await clientPage.locator('#reviewPin').fill('0427'); await clientPage.locator('#reviewSaveButton').click();
+    await hostPage.waitForFunction(() => document.querySelector('#reviewsSummary')?.textContent.includes('5.0'));
+    await clientPage.waitForFunction(() => document.querySelector('#reviewsSummary')?.textContent.includes('5.0'));
+    await clientPage.locator('#closeReviewsDialog').click(); await hostPage.locator('#closeReviewsDialog').click();
+
     await clientPage.getByRole('button', { name: '오늘의 추첨' }).click();
     await clientPage.locator('#drawButton').click();
     await clientPage.waitForFunction(() => document.querySelector('#historySideCount')?.textContent === '1');
@@ -92,6 +135,10 @@ async function addRestaurant(page, name) {
     assert.equal(hostHash, clientHash, 'Both apps must display the same hash');
     assert.equal(stored.snapshot.restaurants.length, 17);
     assert.equal(stored.snapshot.draws.length, 1);
+    assert.equal(stored.snapshot.reviews.length, 1);
+    assert.equal(stored.snapshot.reviews[0].rating, 5);
+    assert.equal(stored.snapshot.reviews[0].avatarId, 'doodle-frog');
+    assert.equal(stored.snapshot.reviews[0].photos.length, 1);
     assert.ok(autoReconnectedAfterClientRestart);
     assert.ok(offlineEditingDisabled);
     assert.ok(autoReconnectedAfterHostRestart);
@@ -103,6 +150,7 @@ async function addRestaurant(page, name) {
       codeLength: code.length, hostCount: stored.snapshot.restaurants.length,
       clientCount: await clientPage.locator('#sideCount').textContent(),
       drawCount: stored.snapshot.draws.length,
+      reviewsShared: true, photoShared: true, reviewPinProtected: true,
       revision: stored.revision, fileHashValid: fileHash === stored.hash,
       uiHashesMatch: hostHash === clientHash, autoReconnectedAfterClientRestart,
       offlineEditingDisabled, autoReconnectedAfterHostRestart, recoveredHashValid,
