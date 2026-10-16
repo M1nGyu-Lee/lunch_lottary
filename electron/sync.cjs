@@ -436,9 +436,13 @@ async function createSyncService({ app, BrowserWindow, ipcMain, syncPort, discov
   if (config.mode === 'host') {
     try {
       envelope = await loadHostState();
-      if (envelope) await startHostServer();
-      else { connected = false; lastError = '공유 데이터 파일이 없습니다. 공유 화면에서 다시 시작해 주세요.'; }
     } catch (error) { connected = false; hostStateInvalid = true; lastError = error.message; }
+    if (envelope && !hostStateInvalid) {
+      try { await startHostServer(); } catch { /* The sharing screen can retry after the port is available. */ }
+    } else if (!hostStateInvalid) {
+      connected = false;
+      lastError = '공유 데이터 파일이 없습니다. 공유 화면에서 다시 시작해 주세요.';
+    }
   } else if (config.mode === 'client') {
     startClientLoop();
   }
