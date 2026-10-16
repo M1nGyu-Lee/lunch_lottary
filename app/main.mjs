@@ -10,7 +10,7 @@ const OFFICIAL_URL = 'https://zeropay.or.kr/UI_HP_009_03.act';
 const state = { restaurants: [], draws: [], settings: normalizeSettings(), filters: new Set(), formTags: new Set(), editId: null, visitDrawId: null, currentDrawId: null, phase: 'idle', winner: null, rerolls: 0, scratched: 0, pointer: false, lastPoint: null, drawPending: false, syncMode: 'solo', syncConnected: false, syncRoomId: null, syncEpoch: null, syncRevision: -1, syncHash: '' };
 Object.assign(state, { reviews: [], reviewRestaurantId: null, reviewEditId: null, reviewEditVersion: null,
   reviewRating: 0, reviewPhotos: [], reviewPending: false, reviewPhotoBusy: false, reviewFormToken: 0, reviewError: '' });
-Object.assign(state, { reviewAvatarId: 'capybara', reviewAvatarStyle: 'illustration' });
+Object.assign(state, { reviewAvatarId: 'capybara', reviewAvatarStyle: 'illustration', reviewReturnToBoard: false });
 let toastTimer;
 let syncApplyQueue = Promise.resolve();
 
@@ -220,7 +220,7 @@ async function initSync() {
   const initial = await window.lunchSync.getState();
   renderSyncStatus(initial.status);
   state.reviewError = initial.reviewError || '';
-  if (initial.status.mode === 'solo') { state.reviews = initial.localReviews || []; await db.replaceReviews(state.reviews); renderRestaurants(); }
+  if (initial.status.mode === 'solo') { state.reviews = initial.localReviews || []; await db.replaceReviews(state.reviews); renderRestaurants(); renderReviews(); }
   if (initial.envelope) await queueSharedEnvelope(initial.envelope);
 }
 
@@ -353,6 +353,7 @@ function renderAvatarPicker() {
 }
 
 function renderReviews() {
+  renderReviewBoard();
   if (!state.reviewRestaurantId) return;
   const restaurant = state.restaurants.find(r => r.id === state.reviewRestaurantId);
   $('reviewsRestaurantName').textContent = restaurant?.name || '삭제된 음식점';
@@ -363,8 +364,18 @@ function renderReviews() {
   const list = $('reviewsList'); list.replaceChildren();
   const items = state.reviews.filter(r => r.restaurantId === state.reviewRestaurantId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (!items.length) list.append(create('p', 'review-empty', '아직 리뷰가 없어요. 오늘의 한 끼는 어땠나요?'));
-  for (const review of items) {
+  for (const review of items) list.append(reviewCard(review));
+}
+
+function reviewCard(review, fromBoard = false) {
     const card = create('article', 'review-card'); card.dataset.reviewId = review.id;
+    if (fromBoard) {
+      const restaurant = state.restaurants.find(r => r.id === review.restaurantId);
+      const place = create('button', 'review-board-place', restaurant?.name || '삭제된 음식점');
+      place.type = 'button'; place.disabled = !restaurant;
+      place.onclick = () => openReviews(review.restaurantId);
+      card.append(place);
+    }
     const top = create('div', 'review-card-top');
     const author = create('div', 'review-author');
     author.append(create('strong', '', review.nickname), create('small', '', avatarById(review.avatarId).name));
@@ -382,9 +393,43 @@ function renderReviews() {
     }
     card.append(photos);
     const edit = create('button', 'review-edit', '비밀번호로 수정'); edit.disabled = !reviewsWritable();
-    edit.onclick = () => openReviewForm(review);
-    const footer = create('div', 'review-card-footer'); footer.append(dates, edit); card.append(footer); list.append(card);
+    edit.onclick = () => { state.reviewRestaurantId = review.restaurantId; openReviewForm(review, fromBoard); };
+    const footer = create('div', 'review-card-footer'); footer.append(dates, edit); card.append(footer);
+    return card;
+}
+
+function renderReviewBoard() {
+  $('reviewSideCount').textContent = state.reviews.length;
+  const picker = $('reviewBoardRestaurant'); const previous = picker.value;
+  const restaurants = [...state.restaurants].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  picker.replaceChildren(new Option('전체 음식점', ''), ...restaurants.map(r => new Option(r.name, r.id)));
+  picker.value = restaurants.some(r => r.id === previous) ? previous : '';
+  const query = $('reviewBoardSearch').value.trim().toLocaleLowerCase();
+  const places = new Map(state.restaurants.map(r => [r.id, r]));
+  const items = state.reviews.filter(review => {
+    const place = places.get(review.restaurantId);
+    return (!picker.value || picker.value === review.restaurantId) &&
+      (!query || [review.nickname, review.body, place?.name, place?.address, ...(place?.tags || [])].join(' ').toLocaleLowerCase().includes(query));
+  }).sort((a, b) => ($('reviewBoardSort').value === 'rating' ? b.rating - a.rating : 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+  $('reviewBoardCount').textContent = `게시글 ${items.length}개 · 전체 ${state.reviews.length}개`;
+  $('boardWriteButton').disabled = !reviewsWritable() || !restaurants.length;
+  $('reviewComposeContinue').disabled = !reviewsWritable() || !restaurants.length;
+  $('reviewBoardConnection').textContent = state.reviewError || (!window.lunchSync ? '글쓰기는 데스크톱 앱에서 사용할 수 있어요.' : state.syncMode === 'client' && !state.syncConnected ? '호스트 연결이 끊겨 저장된 글을 보고 있어요.' : state.syncMode === 'solo' ? '개인 모드 · 교육장 공유에 참여하면 팀원 글을 함께 볼 수 있어요.' : '교육장 공유 · 팀원의 새 글이 자동으로 반영돼요.');
+  const list = $('reviewBoardList'); list.replaceChildren(...items.map(review => reviewCard(review, true)));
+  if (!items.length) {
+    const empty = create('div', 'empty-state');
+    empty.append(create('span', 'empty-icon', '▧'), create('strong', '', state.reviews.length ? '조건에 맞는 게시글이 없어요' : '아직 게시글이 없어요'), create('p', '', state.reviews.length ? '다른 음식점이나 검색어로 찾아보세요.' : restaurants.length ? '오른쪽 위 리뷰 글쓰기로 첫 이야기를 남겨 주세요.' : '음식점 보관함에 음식점을 등록한 뒤 첫 글을 남겨 주세요.'));
+    list.append(empty);
   }
+}
+
+function composeBoardReview() {
+  if (!reviewsWritable() || !state.restaurants.length) return;
+  const restaurants = [...state.restaurants].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  const picker = $('reviewComposeRestaurant');
+  picker.replaceChildren(...restaurants.map(r => new Option(r.name, r.id)));
+  if ($('reviewBoardRestaurant').value) picker.value = $('reviewBoardRestaurant').value;
+  $('reviewComposeDialog').showModal();
 }
 
 function renderReviewControls() {
@@ -414,8 +459,9 @@ function renderReviewPhotos() {
   }));
 }
 
-async function openReviewForm(review = null) {
+async function openReviewForm(review = null, fromBoard = false) {
   if (!reviewsWritable()) return;
+  state.reviewReturnToBoard = fromBoard;
   state.reviewFormToken++; state.reviewEditId = review?.id || null; state.reviewEditVersion = review?.version || null;
   state.reviewRating = review?.rating || 0; state.reviewPhotos = [...review?.photos || []];
   $('reviewFormTitle').textContent = review ? '리뷰 수정' : '리뷰 쓰기';
@@ -432,7 +478,9 @@ async function openReviewForm(review = null) {
 function closeReviewForm() {
   if (state.reviewPending || state.reviewPhotoBusy) return;
   state.reviewFormToken++; $('reviewPin').value = ''; $('reviewFormDialog').close();
-  renderReviews(); $('reviewsDialog').showModal();
+  renderReviews();
+  if (state.reviewReturnToBoard) switchTab('reviews');
+  else $('reviewsDialog').showModal();
 }
 
 async function compressReviewPhoto(file) {
@@ -513,10 +561,12 @@ async function deleteReview() {
 function switchTab(tab) {
   $('lotteryTab').hidden = tab !== 'lottery';
   $('restaurantsTab').hidden = tab !== 'restaurants';
+  $('reviewsTab').hidden = tab !== 'reviews';
   $('historyTab').hidden = tab !== 'history';
   $('shareTab').hidden = tab !== 'share';
   $('fireOverlay').classList.toggle('active', tab === 'lottery' && ['final', 'ultimate'].includes(state.phase));
   document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+  if (tab === 'reviews') renderReviewBoard();
 }
 
 function openForm(r = null) {
@@ -773,6 +823,15 @@ async function importFullBackup(file) {
 }
 
 function attachEvents() {
+  $('boardWriteButton').onclick = composeBoardReview;
+  $('reviewBoardSearch').oninput = renderReviewBoard;
+  $('reviewBoardRestaurant').onchange = $('reviewBoardSort').onchange = renderReviewBoard;
+  $('closeReviewCompose').onclick = () => $('reviewComposeDialog').close();
+  $('reviewComposeContinue').onclick = () => {
+    const id = $('reviewComposeRestaurant').value;
+    if (!reviewsWritable() || !state.restaurants.some(r => r.id === id)) return;
+    state.reviewRestaurantId = id; $('reviewComposeDialog').close(); openReviewForm(null, true);
+  };
   $('openShareButton').onclick = () => switchTab('share');
   $('copyConnectionButton').onclick = async () => { try { await window.lunchSync.copyInvite(); toast('호스트 주소와 공유 코드를 복사했어요.'); } catch (error) { toast(error.message); } };
   $('closeReviewsDialog').onclick = () => $('reviewsDialog').close();
@@ -870,7 +929,7 @@ async function init() {
   attachEvents();
   try { await seedDefaultRestaurants(); state.restaurants = await db.restaurants(); state.draws = await db.draws(); state.reviews = await db.reviews(); state.settings = normalizeSettings(await db.settings()); }
   catch (error) { toast('저장소를 열지 못했습니다. 앱을 다시 실행해 주세요.'); console.error(error); }
-  renderTags(); renderRestaurants(); renderSettings(); renderEligible(); renderHistory();
+  renderTags(); renderRestaurants(); renderSettings(); renderEligible(); renderHistory(); renderReviews();
   try { await initSync(); } catch (error) { $('shareError').textContent = error.message; }
 }
 

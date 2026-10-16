@@ -97,6 +97,18 @@
 .review-card-footer { display: flex; justify-content: space-between; gap: 15px; align-items: center; margin-top: 16px; border-top: 1px solid #3b3046; padding-top: 12px; }
 .review-card-footer .review-date,.review-card-footer .review-edit { margin: 0; }
 .review-card-footer .review-date { line-height: 1.6; }
+.board-toolbar { flex-wrap: wrap; }
+.board-toolbar .search-box { min-width: 220px; }
+.board-toolbar select { max-width: 240px; }
+.board-status { display: flex; justify-content: space-between; gap: 16px; margin: 20px 0; color: #a99ab6; font-size: 11px; line-height: 1.7; }
+.board-status > span:first-child { color: #e6d4f0; font-weight: 800; white-space: nowrap; }
+.review-board-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; align-items: start; }
+.review-board-list .empty-state { grid-column: 1 / -1; }
+.review-board-place { display: block; border: 0; background: transparent; color: #e3c07f; padding: 0 0 14px; margin-bottom: 17px; width: 100%; border-bottom: 1px solid #403347; text-align: left; font-size: 16px; font-weight: 800; overflow-wrap: anywhere; }
+.review-board-place:hover { color: #ffdda0; }
+.review-board-list .review-card .review-photo-button { max-height: 230px; }
+#reviewComposeRestaurant { width: 100%; padding: 12px; border: 1px solid #53435f; border-radius: 9px; color: #f3e9fa; background: #17121f; }
+@media(max-width:1200px) { .review-board-list { grid-template-columns: 1fr; } .board-status { flex-direction: column; gap: 4px; } }
 @media(max-width:600px) { .review-card-top { grid-template-columns: 44px minmax(0,1fr); } .review-card-top .review-score { grid-column: 2; font-size: 13px; } .review-avatar { width: 44px; height: 44px; } .avatar-choices { grid-template-columns: repeat(2,minmax(0,1fr)); } .avatar-picker-heading { align-items: flex-start; flex-direction: column; } }
 @media(max-width:1100px) { .share-guide { grid-template-columns: repeat(2, minmax(0,1fr)); } .restaurant-card { flex-wrap: wrap; } .card-actions { margin-left: auto; } }
 @media(max-width:650px) { .history-card { flex-wrap: wrap; padding: 14px; } .history-right { width: 100%; justify-content: flex-end; } .eaten-date { margin-right: auto; } }
