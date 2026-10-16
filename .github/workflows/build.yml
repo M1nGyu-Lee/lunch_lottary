@@ -31,6 +31,8 @@ jobs:
             arch: arm64
             artifact: dist/LunchLottery-macOS-arm64-*.dmg
     runs-on: ${{ matrix.os }}
+    env:
+      SMOKE_SCREENSHOT_DIR: outputs/smoke-${{ matrix.target }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -47,6 +49,15 @@ jobs:
       - run: pnpm exec electron-builder --${{ matrix.target }} ${{ matrix.format }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Test the Windows desktop app and shared reviews
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/lunch-smoke" --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          $env:NODE_PATH = "$env:RUNNER_TEMP/lunch-smoke/node_modules"
+          $env:SMOKE_EXECUTABLE = (Resolve-Path 'dist/win-unpacked/점심복권.exe').Path
+          node scripts/desktop-smoke.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify and test the Mac disk image
         if: matrix.target == 'mac'
         shell: bash
@@ -87,6 +98,12 @@ jobs:
           name: lunch-lottery-${{ matrix.target }}-${{ matrix.arch }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ env.SMOKE_SCREENSHOT_DIR }}
+          if-no-files-found: ignore
 
   release:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
