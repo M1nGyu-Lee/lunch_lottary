@@ -74,3 +74,28 @@ test('개인 모드 리뷰도 재시작 후 비밀번호로 수정할 수 있다
     assert.equal(updated.reviews[0].version, 2);
   } finally { instance?.service.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('다른 앱이 공유 포트를 사용 중이어도 데이터 손상으로 오인하지 않고 다시 열 수 있다', async () => {
+  const firstDirectory = await mkdtemp(path.join(tmpdir(), 'lunch-host-first-'));
+  const nextDirectory = await mkdtemp(path.join(tmpdir(), 'lunch-host-retry-'));
+  let first, next;
+  const snapshot = { restaurants: [], draws: [], reviews: [] };
+  try {
+    first = await setup(firstDirectory);
+    await first.invoke('sync:startHost', snapshot);
+    next = await setup(nextDirectory);
+    await assert.rejects(next.invoke('sync:startHost', snapshot), /공유 포트/);
+    assert.equal((await next.invoke('sync:getState')).status.connected, false);
+    next.service.close(); next = await setup(nextDirectory);
+    const blocked = await next.invoke('sync:getState');
+    assert.equal(blocked.status.connected, false);
+    assert.ok(blocked.envelope);
+    first.service.close(); first = null;
+    const retried = await next.invoke('sync:startHost', snapshot);
+    assert.equal(retried.status.connected, true);
+  } finally {
+    first?.service.close(); next?.service.close();
+    await rm(firstDirectory, { recursive: true, force: true });
+    await rm(nextDirectory, { recursive: true, force: true });
+  }
+});
