@@ -69,6 +69,7 @@ async function addRestaurant(page, name) {
     await clientPage.getByRole('button', { name: '픽셀 게임', exact: true }).click();
     await clientPage.getByRole('button', { name: '도시락 유령', exact: true }).click();
     await clientPage.waitForFunction(() => [...document.querySelectorAll('#reviewAvatarChoices img')].every(image => image.complete && image.naturalWidth > 0));
+    assert.ok(await clientPage.locator('#reviewFormDialog').evaluate(dialog => dialog.scrollHeight <= dialog.clientHeight + 1), 'Review form must scroll inside its body, keeping the save button visible');
     await capture(clientPage, 'avatar-picker');
     await clientPage.getByRole('button', { name: '별점 4점', exact: true }).click();
     await clientPage.locator('#reviewBody').fill('팀원과 점심 먹기 좋아요. <script>문자는 그대로</script>');
@@ -87,6 +88,7 @@ async function addRestaurant(page, name) {
     await hostPage.waitForFunction(() => [...document.querySelectorAll('#reviewsList img')].every(image => image.complete && image.naturalWidth > 0));
     assert.ok((await hostPage.locator('#reviewsSummary').textContent()).includes('4.0'));
     assert.equal(await hostPage.locator('#reviewsList .review-avatar').getAttribute('alt'), '도시락 유령');
+    assert.ok(await hostPage.locator('#reviewsDialog').evaluate(dialog => dialog.scrollHeight <= dialog.clientHeight + 1), 'Review list must scroll inside its body');
     await capture(hostPage, 'shared-review');
     await clientPage.locator('#reviewsList .review-edit').click();
     await clientPage.getByRole('button', { name: '별점 5점', exact: true }).click();
