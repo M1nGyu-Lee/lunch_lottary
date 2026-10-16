@@ -1,7 +1,7 @@
 {
   "name": "lunch-lottery",
-  "version": "0.2.0",
-  "description": "팀을 위한 제로페이 점심 복권",
+  "version": "0.3.0",
+  "description": "팀 점심 추첨과 교육장 음식점 리뷰 공유",
   "author": "Lunch Lottery Contributors",
   "private": true,
   "packageManager": "pnpm@11.25.0",
