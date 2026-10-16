@@ -47,7 +47,10 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(target).toString());
   });
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
-  syncService = await createSyncService({ app, BrowserWindow, ipcMain });
+  const smokePort = Number(app.commandLine.getSwitchValue('lunch-smoke-port'));
+  const smokeOptions = Number.isInteger(smokePort) && smokePort >= 1024 && smokePort < 65535
+    ? { syncPort: smokePort, discoveryPort: smokePort + 1 } : {};
+  syncService = await createSyncService({ app, BrowserWindow, ipcMain, ...smokeOptions });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

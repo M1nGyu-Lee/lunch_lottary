@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('lunchSync', {
   startHost: snapshot => ipcRenderer.invoke('sync:startHost', snapshot),
   joinHost: input => ipcRenderer.invoke('sync:joinHost', input),
   mutate: operation => ipcRenderer.invoke('sync:mutate', operation),
+  copyInvite: () => ipcRenderer.invoke('sync:copyInvite'),
   onStatus: callback => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('sync:status', listener);
