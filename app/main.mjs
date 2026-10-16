@@ -2,10 +2,15 @@ import { DEFAULT_TAGS, cleanRestaurant, eligibleRestaurants, pickRestaurant, can
 import { db } from './db.mjs';
 import { SEED_RESTAURANTS, SEED_VERSION } from './seed.mjs';
 import { canonicalSnapshot } from './sync-protocol.mjs';
+import { cleanReview, reviewSummary, MAX_REVIEW_PHOTOS, MAX_PHOTO_LENGTH } from './reviews.mjs';
+import { AVATARS, AVATAR_STYLES, avatarById, avatarSource } from './avatars.mjs';
 
 const $ = id => document.getElementById(id);
 const OFFICIAL_URL = 'https://zeropay.or.kr/UI_HP_009_03.act';
 const state = { restaurants: [], draws: [], settings: normalizeSettings(), filters: new Set(), formTags: new Set(), editId: null, visitDrawId: null, currentDrawId: null, phase: 'idle', winner: null, rerolls: 0, scratched: 0, pointer: false, lastPoint: null, drawPending: false, syncMode: 'solo', syncConnected: false, syncRoomId: null, syncEpoch: null, syncRevision: -1, syncHash: '' };
+Object.assign(state, { reviews: [], reviewRestaurantId: null, reviewEditId: null, reviewEditVersion: null,
+  reviewRating: 0, reviewPhotos: [], reviewPending: false, reviewPhotoBusy: false, reviewFormToken: 0, reviewError: '' });
+Object.assign(state, { reviewAvatarId: 'capybara', reviewAvatarStyle: 'illustration' });
 let toastTimer;
 let syncApplyQueue = Promise.resolve();
 
@@ -145,13 +150,14 @@ async function applySharedEnvelope(envelope) {
   await db.replaceShared(envelope.snapshot);
   state.restaurants = await db.restaurants();
   state.draws = await db.draws();
+  state.reviews = await db.reviews();
   state.syncRoomId = envelope.roomId;
   state.syncEpoch = envelope.epoch;
   state.syncRevision = envelope.revision;
   state.syncHash = envelope.hash;
   $('syncRevision').textContent = String(envelope.revision);
   $('syncHash').textContent = envelope.hash.slice(0, 16) + '…';
-  renderTags(); renderRestaurants(); renderEligible(); renderHistory();
+  renderTags(); renderRestaurants(); renderEligible(); renderHistory(); renderReviews();
 }
 
 function queueSharedEnvelope(envelope) {
@@ -193,6 +199,7 @@ function renderSyncStatus(status) {
     $('importButton').disabled = status.mode === 'client' && !status.connected;
     $('fullImportButton').disabled = status.mode === 'client' && !status.connected;
     renderRestaurants(); renderHistory(); renderActions();
+    renderReviews(); renderReviewControls();
   }
 }
 
@@ -212,6 +219,8 @@ async function initSync() {
   window.lunchSync.onSnapshot(envelope => { queueSharedEnvelope(envelope).catch(() => {}); });
   const initial = await window.lunchSync.getState();
   renderSyncStatus(initial.status);
+  state.reviewError = initial.reviewError || '';
+  if (initial.status.mode === 'solo') { state.reviews = initial.localReviews || []; await db.replaceReviews(state.reviews); renderRestaurants(); }
   if (initial.envelope) await queueSharedEnvelope(initial.envelope);
 }
 
@@ -304,11 +313,201 @@ function renderRestaurants() {
     const badge = create('span', `verification ${r.zeroPay}${stale ? ' stale' : ''}`,
       stale ? '↻ 재확인 권장' : statusLabel(r.zeroPay));
     const actions = create('div', 'card-actions');
+    const summary = reviewSummary(state.reviews, r.id);
+    const reviews = create('button', 'review-card-button', summary.count ? `★ ${summary.average.toFixed(1)} · 리뷰 ${summary.count}` : '☆ 별점·리뷰');
+    reviews.setAttribute('aria-label', `${r.name} 별점·리뷰`); reviews.onclick = () => openReviews(r.id);
     const edit = create('button', '', '수정'); edit.title = `${r.name} 수정`; edit.onclick = () => openForm(r);
     const remove = create('button', '', '삭제'); remove.title = `${r.name} 삭제`; remove.onclick = () => deleteRestaurant(r);
     edit.disabled = remove.disabled = state.syncMode === 'client' && !state.syncConnected;
-    actions.append(edit, remove); card.append(avatar, detail, badge, actions); list.append(card);
+    actions.append(reviews, edit, remove); card.append(avatar, detail, badge, actions); list.append(card);
   }
+}
+
+function reviewsWritable() { return Boolean(window.lunchSync) && !state.reviewError && !(state.syncMode === 'client' && !state.syncConnected); }
+
+function openReviews(restaurantId) {
+  state.reviewRestaurantId = restaurantId; renderReviews(); $('reviewsDialog').showModal();
+}
+
+function openPhoto(src) {
+  $('reviewLargePhoto').src = src; $('reviewPhotoDialog').showModal();
+}
+
+function avatarImage(id, className = 'review-avatar') {
+  const avatar = avatarById(id); const image = create('img', `${className} ${avatar.style}`);
+  image.src = avatarSource(id); image.alt = avatar.name; return image;
+}
+
+function renderAvatarPicker() {
+  $('reviewAvatarStyles').replaceChildren(...AVATAR_STYLES.map(style => {
+    const button = tagButton(style.label, style.id === state.reviewAvatarStyle, () => { state.reviewAvatarStyle = style.id; renderAvatarPicker(); });
+    button.title = style.description; return button;
+  }));
+  $('reviewAvatarChoices').replaceChildren(...AVATARS.filter(avatar => avatar.style === state.reviewAvatarStyle).map(avatar => {
+    const button = create('button', `avatar-choice${avatar.id === state.reviewAvatarId ? ' selected' : ''}`); button.type = 'button';
+    button.setAttribute('aria-label', avatar.name); button.setAttribute('aria-pressed', String(avatar.id === state.reviewAvatarId));
+    button.append(avatarImage(avatar.id, 'avatar-choice-image'), create('span', '', avatar.name));
+    button.onclick = () => { state.reviewAvatarId = avatar.id; renderAvatarPicker(); }; return button;
+  }));
+  $('reviewProfilePreview').replaceChildren(avatarImage(state.reviewAvatarId), create('div', '', `${$('reviewNickname').value.trim() || '내 닉네임'} · ${avatarById(state.reviewAvatarId).name}`));
+}
+
+function renderReviews() {
+  if (!state.reviewRestaurantId) return;
+  const restaurant = state.restaurants.find(r => r.id === state.reviewRestaurantId);
+  $('reviewsRestaurantName').textContent = restaurant?.name || '삭제된 음식점';
+  const summary = reviewSummary(state.reviews, state.reviewRestaurantId);
+  $('reviewsSummary').textContent = summary.count ? `★ ${summary.average.toFixed(1)} / 5 · 리뷰 ${summary.count}개` : '첫 번째 리뷰를 남겨 주세요.';
+  $('addReviewButton').disabled = !restaurant || !reviewsWritable();
+  $('reviewConnectionNote').textContent = state.reviewError || (!window.lunchSync ? '리뷰 등록·수정은 데스크톱 앱에서 사용할 수 있습니다.' : state.syncMode === 'client' && !state.syncConnected ? '호스트 연결이 끊겨 리뷰를 볼 수만 있어요. 연결 후 등록·수정할 수 있습니다.' : '작성 시 정한 4자리 비밀번호로 자신의 리뷰를 수정·삭제할 수 있어요.');
+  const list = $('reviewsList'); list.replaceChildren();
+  const items = state.reviews.filter(r => r.restaurantId === state.reviewRestaurantId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (!items.length) list.append(create('p', 'review-empty', '아직 리뷰가 없어요. 오늘의 한 끼는 어땠나요?'));
+  for (const review of items) {
+    const card = create('article', 'review-card'); card.dataset.reviewId = review.id;
+    const top = create('div', 'review-card-top');
+    const author = create('div', 'review-author');
+    author.append(create('strong', '', review.nickname), create('small', '', avatarById(review.avatarId).name));
+    const score = create('span', 'review-score', '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating));
+    score.setAttribute('aria-label', `별점 ${review.rating}점`);
+    top.append(avatarImage(review.avatarId), author, score); card.append(top);
+    const dates = create('small', 'review-date', `${formatDate(review.createdAt)} 작성${review.version > 1 ? ` · ${formatDate(review.updatedAt)} 수정` : ''}`);
+    if (review.body) card.append(create('p', 'review-text', review.body));
+    const photos = create('div', 'review-photos');
+    photos.dataset.count = String(review.photos.length);
+    for (const [index, src] of review.photos.entries()) {
+      const button = create('button', 'review-photo-button'); button.type = 'button'; button.setAttribute('aria-label', `${review.nickname} 사진 ${index + 1} 확대`);
+      const image = create('img'); image.src = src; image.alt = `${review.nickname}의 음식점 사진 ${index + 1}`; image.loading = 'lazy';
+      button.append(image); button.onclick = () => openPhoto(src); photos.append(button);
+    }
+    card.append(photos);
+    const edit = create('button', 'review-edit', '비밀번호로 수정'); edit.disabled = !reviewsWritable();
+    edit.onclick = () => openReviewForm(review);
+    const footer = create('div', 'review-card-footer'); footer.append(dates, edit); card.append(footer); list.append(card);
+  }
+}
+
+function renderReviewControls() {
+  const blocked = !reviewsWritable() || state.reviewPending || state.reviewPhotoBusy;
+  $('reviewSaveButton').disabled = $('deleteReviewButton').disabled = blocked;
+  $('reviewPhotoInput').disabled = blocked;
+  $('reviewSaveButton').textContent = state.reviewPending ? '저장 중…' : state.reviewPhotoBusy ? '사진 준비 중…' : state.reviewEditId ? '리뷰 수정 저장' : '리뷰 올리기';
+}
+
+function renderReviewStars() {
+  $('reviewStars').replaceChildren(...[1, 2, 3, 4, 5].map(score => {
+    const button = create('button', score <= state.reviewRating ? 'selected' : '', '★'); button.type = 'button';
+    button.setAttribute('aria-label', `별점 ${score}점`); button.setAttribute('aria-pressed', String(score === state.reviewRating));
+    button.onclick = () => { state.reviewRating = score; renderReviewStars(); }; return button;
+  }));
+  $('reviewRatingLabel').textContent = state.reviewRating ? `${state.reviewRating} / 5점` : '별점을 선택해 주세요.';
+}
+
+function renderReviewPhotos() {
+  $('reviewPhotoPreviews').replaceChildren(...state.reviewPhotos.map((src, index) => {
+    const wrapper = create('div', 'review-photo-preview');
+    const photo = create('button', 'review-photo-button'); photo.type = 'button'; photo.setAttribute('aria-label', `첨부 사진 ${index + 1} 확대`);
+    const image = create('img'); image.src = src; image.alt = `첨부 사진 ${index + 1}`; photo.append(image); photo.onclick = () => openPhoto(src);
+    const remove = create('button', 'review-photo-remove', '×'); remove.type = 'button'; remove.setAttribute('aria-label', `첨부 사진 ${index + 1} 삭제`);
+    remove.onclick = () => { if (state.reviewPending || state.reviewPhotoBusy) return; state.reviewPhotos.splice(index, 1); renderReviewPhotos(); };
+    wrapper.append(photo, remove); return wrapper;
+  }));
+}
+
+async function openReviewForm(review = null) {
+  if (!reviewsWritable()) return;
+  state.reviewFormToken++; state.reviewEditId = review?.id || null; state.reviewEditVersion = review?.version || null;
+  state.reviewRating = review?.rating || 0; state.reviewPhotos = [...review?.photos || []];
+  $('reviewFormTitle').textContent = review ? '리뷰 수정' : '리뷰 쓰기';
+  $('reviewPlaceName').textContent = state.restaurants.find(r => r.id === state.reviewRestaurantId)?.name || '음식점';
+  $('reviewNickname').value = review?.nickname || await db.meta('reviewNickname') || '';
+  state.reviewAvatarId = avatarById(review?.avatarId || await db.meta('reviewAvatarId')).id;
+  state.reviewAvatarStyle = avatarById(state.reviewAvatarId).style; renderAvatarPicker();
+  $('reviewBody').value = review?.body || ''; $('reviewPin').value = ''; $('reviewPhotoInput').value = ''; $('reviewFormError').textContent = '';
+  $('deleteReviewButton').hidden = !review;
+  renderReviewStars(); renderReviewPhotos(); renderReviewControls();
+  $('reviewsDialog').close(); $('reviewFormDialog').showModal(); $('reviewNickname').focus();
+}
+
+function closeReviewForm() {
+  if (state.reviewPending || state.reviewPhotoBusy) return;
+  state.reviewFormToken++; $('reviewPin').value = ''; $('reviewFormDialog').close();
+  renderReviews(); $('reviewsDialog').showModal();
+}
+
+async function compressReviewPhoto(file) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12_000_000) throw new Error('12MB 이하의 JPG, PNG, WebP 사진을 선택해 주세요.');
+  let image;
+  try { image = await createImageBitmap(file); } catch { throw new Error('읽을 수 없는 사진입니다. 다른 사진을 선택해 주세요.'); }
+  try {
+    if (image.width * image.height > 50_000_000) throw new Error('사진 해상도가 너무 높습니다. 크기를 줄여 선택해 주세요.');
+    const canvas = document.createElement('canvas');
+    for (const edge of [1280, 960, 640]) {
+      const scale = Math.min(1, edge / Math.max(image.width, image.height));
+      canvas.width = Math.max(1, Math.round(image.width * scale)); canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d'); context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      for (const quality of [.8, .65, .45]) {
+        const result = canvas.toDataURL('image/jpeg', quality); if (result.length <= MAX_PHOTO_LENGTH) return result;
+      }
+    }
+    throw new Error('사진을 저장 크기로 줄이지 못했습니다. 다른 사진을 선택해 주세요.');
+  } finally { image.close(); }
+}
+
+async function chooseReviewPhotos(event) {
+  const files = [...event.target.files || []]; event.target.value = '';
+  if (!files.length) return;
+  const token = state.reviewFormToken; state.reviewPhotoBusy = true; renderReviewControls(); $('reviewFormError').textContent = '';
+  try {
+    if (state.reviewPhotos.length + files.length > MAX_REVIEW_PHOTOS) throw new Error('사진은 합쳐서 최대 3장까지 선택해 주세요.');
+    const photos = [];
+    for (const file of files) photos.push(await compressReviewPhoto(file));
+    if (token === state.reviewFormToken) { state.reviewPhotos.push(...photos); renderReviewPhotos(); }
+  } catch (error) { if (token === state.reviewFormToken) $('reviewFormError').textContent = error.message; }
+  finally { state.reviewPhotoBusy = false; renderReviewControls(); }
+}
+
+async function writeReview(operation) {
+  if (!reviewsWritable()) throw new Error('호스트에 연결한 후 다시 시도해 주세요.');
+  const result = await window.lunchSync.mutate(operation);
+  if (state.syncMode === 'solo') { state.reviews = result.reviews; await db.replaceReviews(state.reviews); }
+  else await queueSharedEnvelope(result);
+  renderRestaurants(); renderReviews();
+}
+
+async function saveReview(event) {
+  event.preventDefault(); if (state.reviewPending || state.reviewPhotoBusy) return;
+  $('reviewFormError').textContent = '';
+  try {
+    const pin = $('reviewPin').value;
+    if (!/^\d{4}$/.test(pin)) throw new Error('비밀번호는 숫자 4자리로 입력해 주세요.');
+    if (!state.restaurants.some(r => r.id === state.reviewRestaurantId)) throw new Error('음식점이 삭제되어 리뷰를 올릴 수 없습니다.');
+    const now = new Date().toISOString();
+    const review = cleanReview({ id: state.reviewEditId || crypto.randomUUID(), restaurantId: state.reviewRestaurantId,
+      nickname: $('reviewNickname').value, avatarId: state.reviewAvatarId, rating: state.reviewRating, body: $('reviewBody').value,
+      photos: state.reviewPhotos, createdAt: now, updatedAt: now, version: 1 });
+    state.reviewPending = true; renderReviewControls();
+    await writeReview({ type: state.reviewEditId ? 'updateReview' : 'createReview', review, pin,
+      id: state.reviewEditId, expectedVersion: state.reviewEditVersion });
+    await db.saveMeta('reviewNickname', review.nickname).catch(() => {});
+    await db.saveMeta('reviewAvatarId', review.avatarId).catch(() => {});
+    state.reviewPending = false; closeReviewForm(); toast(state.reviewEditId ? '리뷰를 수정했어요.' : '리뷰를 올렸어요.');
+  } catch (error) { $('reviewFormError').textContent = error.message || '리뷰를 저장하지 못했습니다.'; }
+  finally { state.reviewPending = false; renderReviewControls(); }
+}
+
+async function deleteReview() {
+  if (state.reviewPending || state.reviewPhotoBusy || !state.reviewEditId) return;
+  $('reviewFormError').textContent = '';
+  if (!/^\d{4}$/.test($('reviewPin').value)) { $('reviewFormError').textContent = '작성 시 정한 4자리 비밀번호를 입력해 주세요.'; return; }
+  if (!confirm('이 리뷰와 사진을 삭제할까요?')) return;
+  state.reviewPending = true; renderReviewControls();
+  try {
+    await writeReview({ type: 'deleteReview', id: state.reviewEditId, pin: $('reviewPin').value, expectedVersion: state.reviewEditVersion });
+    state.reviewPending = false; closeReviewForm(); toast('리뷰를 삭제했어요.');
+  } catch (error) { $('reviewFormError').textContent = error.message; }
+  finally { state.reviewPending = false; renderReviewControls(); }
 }
 
 function switchTab(tab) {
@@ -506,18 +705,18 @@ function exportRestaurants() {
 }
 
 function exportFullBackup() {
-  const payload = { format: 'lunch-lottery-backup', version: 3, exportedAt: new Date().toISOString(), restaurants: state.restaurants, draws: state.draws, settings: state.settings };
+  const payload = { format: 'lunch-lottery-backup', version: 4, exportedAt: new Date().toISOString(), restaurants: state.restaurants, draws: state.draws, reviews: state.reviews, settings: state.settings };
   downloadJson(payload, `점심복권-전체백업-${new Date().toISOString().slice(0, 10)}.json`);
-  toast('음식점, 추첨·식사 이력, 설정을 전체 백업했어요.');
+  toast('음식점, 식사 이력, 리뷰·사진과 설정을 백업했어요. 리뷰 비밀번호는 원래 PC에만 보관됩니다.');
 }
 
 async function importRestaurants(file) {
   if (!file) return;
   try {
-    if (file.size > 5_000_000) throw new Error('5MB 이하의 JSON 파일을 선택해 주세요.');
+    if (file.size > 45_000_000) throw new Error('45MB 이하의 JSON 파일을 선택해 주세요.');
     const data = JSON.parse(await file.text());
     const validRestaurantFile = data.format === 'lunch-lottery-restaurants' && data.version === 1;
-    const legacyBackup = data.format === 'lunch-lottery-backup' && [1, 2, 3].includes(data.version);
+    const legacyBackup = data.format === 'lunch-lottery-backup' && [1, 2, 3, 4].includes(data.version);
     if ((!validRestaurantFile && !legacyBackup) || !Array.isArray(data.restaurants)) throw new Error('점심복권 음식점 파일이 아닙니다.');
     const before = state.restaurants.length;
     const restaurants = data.restaurants.slice(0, 5000).map(raw => cleanRestaurant({ ...raw, id: typeof raw.id === 'string' ? raw.id : undefined }));
@@ -536,16 +735,18 @@ async function importRestaurants(file) {
 async function importFullBackup(file) {
   if (!file) return;
   try {
-    if (file.size > 5_000_000) throw new Error('5MB 이하의 백업 파일을 선택해 주세요.');
+    if (file.size > 45_000_000) throw new Error('45MB 이하의 백업 파일을 선택해 주세요.');
     const data = JSON.parse(await file.text());
-    if (data.format !== 'lunch-lottery-backup' || ![1, 2, 3].includes(data.version) || !Array.isArray(data.restaurants)) throw new Error('점심복권 전체 백업 파일이 아닙니다.');
+    if (data.format !== 'lunch-lottery-backup' || ![1, 2, 3, 4].includes(data.version) || !Array.isArray(data.restaurants)) throw new Error('점심복권 전체 백업 파일이 아닙니다.');
     const beforeRestaurants = state.restaurants.length;
     const beforeDraws = state.draws.length;
     const restaurants = data.restaurants.slice(0, 5000).map(raw => cleanRestaurant({ ...raw, id: typeof raw.id === 'string' ? raw.id : undefined }));
     const draws = (Array.isArray(data.draws) ? data.draws : []).slice(0, 20000)
       .filter(raw => typeof raw?.id === 'string' && typeof raw.restaurantId === 'string' && ['normal', 'final', 'ultimate'].includes(raw.phase) && !Number.isNaN(Date.parse(raw.drawnAt)))
       .map(raw => ({ id: raw.id, restaurantId: raw.restaurantId, restaurantName: String(raw.restaurantName || '').slice(0, 80), restaurantAddress: String(raw.restaurantAddress || '').slice(0, 180), phase: raw.phase, drawnAt: raw.drawnAt, eatenOn: /^\d{4}-\d{2}-\d{2}$/.test(raw.eatenOn || '') ? raw.eatenOn : null }));
-    await mutateShared({ type: 'mergeFull', restaurants, draws }, async () => {
+    const reviews = (data.version >= 4 ? data.reviews || [] : []).map(cleanReview).filter(review => restaurants.some(r => r.id === review.restaurantId));
+    if (reviews.length > 1500) throw new Error('리뷰는 최대 1,500개까지 가져올 수 있습니다.');
+    await mutateShared({ type: 'mergeFull', restaurants, draws, reviews }, async () => {
       for (const item of restaurants) {
         if (!state.restaurants.some(r => r.id === item.id || (r.name === item.name && r.address === item.address))) {
           await db.saveRestaurant(item); state.restaurants.push(item);
@@ -554,25 +755,42 @@ async function importFullBackup(file) {
       for (const draw of draws) {
         if (!state.draws.some(d => d.id === draw.id)) { await db.saveDraw(draw); state.draws.push(draw); }
       }
+      if (reviews.length) {
+        if (!window.lunchSync) throw new Error('리뷰 백업은 데스크톱 앱에서 가져와 주세요.');
+        const result = await window.lunchSync.mutate({ type: 'mergeReviews', reviews });
+        state.reviews = result.reviews; await db.replaceReviews(state.reviews);
+      }
     });
     if (data.version >= 3 && data.settings && typeof data.settings === 'object') {
       state.settings = normalizeSettings(data.settings); await db.saveSettings(state.settings);
     }
     state.restaurants = await db.restaurants(); state.draws = await db.draws();
     renderSettings(); renderTags(); renderRestaurants(); renderEligible(); renderHistory();
-    toast(`전체 백업에서 음식점 ${state.restaurants.length - beforeRestaurants}개, 추첨 이력 ${state.draws.length - beforeDraws}개를 가져왔어요.`);
+    renderReviews();
+    toast(`음식점 ${state.restaurants.length - beforeRestaurants}개, 추첨 이력 ${state.draws.length - beforeDraws}개를 가져왔어요.${reviews.length ? ' 리뷰·사진도 가져왔습니다. 수정은 원래 PC의 비밀번호 정보가 필요합니다.' : ''}`);
   } catch (error) { toast(error.message || '전체 백업 파일을 읽지 못했습니다.'); }
   $('fullImportFile').value = '';
 }
 
 function attachEvents() {
+  $('openShareButton').onclick = () => switchTab('share');
+  $('copyConnectionButton').onclick = async () => { try { await window.lunchSync.copyInvite(); toast('호스트 주소와 공유 코드를 복사했어요.'); } catch (error) { toast(error.message); } };
+  $('closeReviewsDialog').onclick = () => $('reviewsDialog').close();
+  $('addReviewButton').onclick = () => openReviewForm();
+  $('closeReviewForm').onclick = $('cancelReviewForm').onclick = closeReviewForm;
+  $('reviewFormDialog').addEventListener('cancel', event => { event.preventDefault(); closeReviewForm(); });
+  $('reviewForm').addEventListener('submit', saveReview);
+  $('reviewPhotoInput').onchange = chooseReviewPhotos;
+  $('reviewNickname').oninput = renderAvatarPicker;
+  $('deleteReviewButton').onclick = deleteReview;
+  $('closeReviewPhoto').onclick = () => { $('reviewPhotoDialog').close(); $('reviewLargePhoto').removeAttribute('src'); };
   document.querySelectorAll('.nav-item').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
   $('discoveredHosts').onchange = event => { if (event.target.value) $('joinAddress').value = event.target.value; };
   $('startHostButton').onclick = async () => {
     if (!window.lunchSync) { $('shareError').textContent = '교육장 공유는 데스크톱 앱에서 사용할 수 있습니다.'; return; }
     $('startHostButton').disabled = true;
     try {
-      const result = await window.lunchSync.startHost({ restaurants: state.restaurants, draws: state.draws });
+      const result = await window.lunchSync.startHost({ restaurants: state.restaurants, draws: state.draws, reviews: state.reviews });
       renderSyncStatus(result.status);
       await queueSharedEnvelope(result.envelope);
       toast('이 PC가 교육장 공유 호스트가 됐어요.');
@@ -650,7 +868,7 @@ async function init() {
   const date = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
   $('todayDate').textContent = date; $('libraryDate').textContent = date; $('historyDate').textContent = date; $('shareDate').textContent = date;
   attachEvents();
-  try { await seedDefaultRestaurants(); state.restaurants = await db.restaurants(); state.draws = await db.draws(); state.settings = normalizeSettings(await db.settings()); }
+  try { await seedDefaultRestaurants(); state.restaurants = await db.restaurants(); state.draws = await db.draws(); state.reviews = await db.reviews(); state.settings = normalizeSettings(await db.settings()); }
   catch (error) { toast('저장소를 열지 못했습니다. 앱을 다시 실행해 주세요.'); console.error(error); }
   renderTags(); renderRestaurants(); renderSettings(); renderEligible(); renderHistory();
   try { await initSync(); } catch (error) { $('shareError').textContent = error.message; }

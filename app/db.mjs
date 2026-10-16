@@ -1,5 +1,5 @@
 const DB_NAME = 'lunch-lottery-v1';
-const VERSION = 1;
+const VERSION = 2;
 
 function open() {
   return new Promise((resolve, reject) => {
@@ -9,6 +9,7 @@ function open() {
       if (!db.objectStoreNames.contains('restaurants')) db.createObjectStore('restaurants', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
       if (!db.objectStoreNames.contains('draws')) db.createObjectStore('draws', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('reviews')) db.createObjectStore('reviews', { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -36,16 +37,29 @@ export const db = {
   saveMeta: (key, value) => run('settings', 'readwrite', store => store.put({ key: `meta:${key}`, value })),
   draws: () => run('draws', 'readonly', store => store.getAll()),
   saveDraw: draw => run('draws', 'readwrite', store => store.put(draw)),
+  reviews: () => run('reviews', 'readonly', store => store.getAll()),
+  replaceReviews: async reviews => {
+    const connection = await open();
+    return new Promise((resolve, reject) => {
+      const tx = connection.transaction('reviews', 'readwrite');
+      const store = tx.objectStore('reviews'); store.clear();
+      for (const item of reviews) store.put(item);
+      tx.oncomplete = () => { connection.close(); resolve(); };
+      tx.onerror = tx.onabort = () => { connection.close(); reject(tx.error); };
+    });
+  },
   replaceShared: async snapshot => {
     const connection = await open();
     return new Promise((resolve, reject) => {
-      const tx = connection.transaction(['restaurants', 'draws'], 'readwrite');
+      const tx = connection.transaction(['restaurants', 'draws', 'reviews'], 'readwrite');
       const restaurants = tx.objectStore('restaurants');
       const draws = tx.objectStore('draws');
+      const reviews = tx.objectStore('reviews'); reviews.clear();
       restaurants.clear();
       draws.clear();
       for (const item of snapshot.restaurants) restaurants.put(item);
       for (const item of snapshot.draws) draws.put(item);
+      for (const item of snapshot.reviews || []) reviews.put(item);
       tx.oncomplete = () => { connection.close(); resolve(); };
       tx.onerror = () => { connection.close(); reject(tx.error); };
       tx.onabort = () => { connection.close(); reject(tx.error); };

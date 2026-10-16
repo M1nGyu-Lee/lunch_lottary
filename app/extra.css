@@ -28,4 +28,70 @@
 .visit-dialog { width: min(430px, calc(100vw - 30px)); }
 .visit-restaurant-name { font-size: 17px; font-weight: 800; margin: 0 0 18px; }
 .visit-dialog .form-field input { color-scheme: dark; }
+.share-guide { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 0 0 24px; list-style: none; counter-reset: sharing; }
+.share-guide li { counter-increment: sharing; background: #221d2d; border: 1px solid #3d334a; border-radius: 12px; padding: 16px; }
+.share-guide b { display: block; font-size: 12px; color: #e3c6f0; margin-bottom: 8px; }
+.share-guide b::before { content: counter(sharing) '. '; color: #ab88c6; }
+.share-guide span { display: block; font-size: 11px; color: #aaa2b6; line-height: 1.7; }
+.host-details button { margin-top: 14px; }
+.reviews-dialog { width: min(740px, calc(100vw - 40px)); }
+.review-form-dialog { width: min(600px, calc(100vw - 40px)); }
+.reviews-overview { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.reviews-overview p { font-size: 16px; font-weight: 800; color: #f1cc79; }
+.reviews-list { display: grid; gap: 16px; margin-top: 20px; }
+.review-card { background: #201c2a; border: 1px solid #3a3048; border-radius: 14px; padding: 20px; }
+.review-card-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.review-card-top strong { font-size: 15px; overflow-wrap: anywhere; }
+.review-score { color: #f3c777; letter-spacing: 3px; white-space: nowrap; }
+.review-date { display: block; color: #93899e; font-size: 11px; margin: 8px 0 12px; }
+.review-text { font-size: 13px; color: #d7cedf; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-empty { text-align: center; color: #a99eb3; padding: 40px 12px; font-size: 13px; }
+.review-edit { color: #d8bbe8; background: #33253f; border: 1px solid #594366; border-radius: 8px; padding: 8px 12px; font-size: 11px; margin-top: 14px; }
+.review-card-button { color: #f0cf8f !important; white-space: nowrap; }
+.review-stars { display: flex; gap: 8px; margin: 4px 0 0; }
+.review-stars button { font-size: 34px; color: #5a5164; background: transparent; border: none; padding: 0 4px; line-height: 1.4; }
+.review-stars button.selected { color: #f0c572; }
+.review-stars button:focus-visible { outline: 2px solid #d3a8ef; border-radius: 7px; }
+.form-field textarea { width: 100%; background: #16131d; color: #efe7f5; border: 1px solid #45384f; border-radius: 10px; padding: 12px; resize: vertical; font: inherit; font-size: 13px; line-height: 1.7; box-sizing: border-box; }
+.form-field > span > small { font-size: 10px; color: #a197ac; font-weight: 400; }
+.photo-picker { display: inline-block; padding: 10px 15px; border: 1px dashed #746183; border-radius: 9px; font-size: 12px; color: #d8bee9; cursor: pointer; align-self: flex-start; }
+.review-photos { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.review-photo-button { width: 120px; height: 100px; padding: 0; background: #13101a; border: 1px solid #45364f; border-radius: 9px; overflow: hidden; }
+.review-photo-button img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.review-photo-preview { position: relative; }
+.review-photo-remove { position: absolute; right: 5px; top: 5px; border: 1px solid #fff6; border-radius: 50%; background: #1d122bcc; color: white; width: 24px; height: 24px; font-size: 18px; line-height: 20px; }
+.review-delete { margin-right: auto; background: transparent; border: 0; color: #ed9999; font-size: 12px; }
+.photo-dialog { padding: 38px 12px 12px; width: min(960px, calc(100vw - 40px)); background: #15101d; }
+.photo-dialog > button { position: absolute; right: 8px; top: 5px; }
+.photo-dialog img { width: 100%; max-height: 75vh; object-fit: contain; display: block; }
+.review-form-dialog .dialog-footer { position: sticky; bottom: 0; background: #1b1723; }
+.avatar-picker { margin: 0 0 22px; padding: 16px; border: 1px solid #44324f; border-radius: 14px; background: #241b30; }
+.avatar-picker-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
+.avatar-picker-heading > span { font-size: 12px; font-weight: 800; color: #ead6f5; }
+.avatar-picker-heading small { font-size: 10px; color: #a99ab5; }
+.avatar-choices { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 9px; margin-top: 13px; }
+.avatar-choice { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 9px 4px; border: 1px solid #47364f; border-radius: 12px; background: #1a1421; color: #baacc7; }
+.avatar-choice-image { width: 68px; height: 68px; object-fit: contain; }
+.avatar-choice span { font-size: 10px; line-height: 1.4; }
+.avatar-choice.selected { background: #44304f; border-color: #ddb9ef; color: #f8e4ff; box-shadow: 0 0 0 1px #ddb9ef; }
+.avatar-choice:hover { border-color: #a884b9; }
+.review-avatar { width: 54px; height: 54px; object-fit: contain; border-radius: 13px; background: #302236; padding: 3px; flex: none; }
+.review-avatar.pixel,.avatar-choice-image.pixel { image-rendering: pixelated; }
+.review-profile-preview { display: flex; align-items: center; gap: 10px; margin-top: 13px; padding-top: 13px; border-top: 1px solid #42344b; }
+.review-profile-preview div { font-size: 11px; color: #d7c7e2; }
+.review-card { padding: 22px; box-shadow: 0 6px 20px #0002; }
+.review-card-top { display: grid; grid-template-columns: 54px minmax(0,1fr) auto; gap: 12px; }
+.review-author strong { display: block; }
+.review-author small { display: block; font-size: 10px; color: #a396b0; margin-top: 5px; }
+.review-text { margin: 18px 0; }
+.review-card .review-photos { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+.review-card .review-photo-button { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+.review-card .review-photos[data-count="1"] { grid-template-columns: 1fr; }
+.review-card .review-photos[data-count="1"] .review-photo-button { aspect-ratio: 16 / 9; max-height: 300px; }
+.review-card .review-photos[data-count="3"] .review-photo-button:first-child { grid-column: 1 / -1; aspect-ratio: 16 / 7; }
+.review-card-footer { display: flex; justify-content: space-between; gap: 15px; align-items: center; margin-top: 16px; border-top: 1px solid #3b3046; padding-top: 12px; }
+.review-card-footer .review-date,.review-card-footer .review-edit { margin: 0; }
+.review-card-footer .review-date { line-height: 1.6; }
+@media(max-width:600px) { .review-card-top { grid-template-columns: 44px minmax(0,1fr); } .review-card-top .review-score { grid-column: 2; font-size: 13px; } .review-avatar { width: 44px; height: 44px; } .avatar-choices { grid-template-columns: repeat(2,minmax(0,1fr)); } .avatar-picker-heading { align-items: flex-start; flex-direction: column; } }
+@media(max-width:1100px) { .share-guide { grid-template-columns: repeat(2, minmax(0,1fr)); } .restaurant-card { flex-wrap: wrap; } .card-actions { margin-left: auto; } }
 @media(max-width:650px) { .history-card { flex-wrap: wrap; padding: 14px; } .history-right { width: 100%; justify-content: flex-end; } .eaten-date { margin-right: auto; } }
